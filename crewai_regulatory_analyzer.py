@@ -1,21 +1,34 @@
+import os
+import asyncio
 from crewai import Crew, Agent, Task
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-import os
+import requests
 
-# Configure LLMs
+# --- Helper Function to Initialize Google AI LLM ---
+def get_google_llm():
+    """Initialize Google AI LLM with proper async event loop handling."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return ChatGoogleGenerativeAI(
+            model="gemini-pro",
+            temperature=0.1,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+    finally:
+        loop.close()
+
+# --- Configure LLMs ---
 groq_llm = ChatGroq(
     temperature=0.1,
     model="mixtral-8x7b-32768",
-    groq_api_key=os.getenv("GROQ_API_KEY")  # Set in environment variables
+    groq_api_key=os.getenv("GROQ_API_KEY")  # From Streamlit secrets
 )
 
-google_llm = ChatGoogleGenerativeAI(
-    model="gemini-pro",
-    temperature=0.1,
-    google_api_key=os.getenv("GOOGLE_API_KEY")  # Set in environment variables
-)
+google_llm = get_google_llm()
 
+# --- Agent Definitions ---
 class RegulatoryParserAgent(Agent):
     def __init__(self):
         super().__init__(
@@ -24,106 +37,39 @@ class RegulatoryParserAgent(Agent):
             backstory="Expert in parsing legal and regulatory documents.",
             verbose=False,
             allow_delegation=True,
-            llm=groq_llm  # Explicitly set LLM
+            llm=groq_llm  # Default LLM for parsing
         )
 
     def parse_document(self, document_content):
+        """Parse document content into paragraphs."""
         return [p.strip() for p in document_content.split('\n\n') if p.strip()]
 
 class ActionItemAgent(Agent):
     def __init__(self, api_choice="groq"):
+        llm = groq_llm if api_choice == "groq" else google_llm
         super().__init__(
             role='Action Item Extractor',
             goal='Identify actionable items from regulatory text.',
             backstory="Experienced compliance officer.",
             verbose=False,
             allow_delegation=True,
-            llm=groq_llm if api_choice == "groq" else google_llm
+            llm=llm
         )
 
 class RiskMitigationAgent(Agent):
     def __init__(self, api_choice="groq"):
+        llm = groq_llm if api_choice == "groq" else google_llm
         super().__init__(
             role='Risk Mitigation Strategist',
             goal='Suggest risk mitigation strategies.',
             backstory="Expert in risk management.",
             verbose=False,
-            llm=groq_llm if api_choice == "groq" else google_llm
+            llm=llm
         )
-
-    def _execute(self, task):
-        paragraph = task.input_data.get('paragraph', '')
-        actions = task.context[0].output if task.context else ""
-        return analyze_text(paragraph, f"Suggest mitigations for: {actions}")
-
-# --- Helper Function ---
-def analyze_text(text, instruction):
-    # Implement actual API calls here
-    return f"{instruction} for text: '{text[:50]}...'"
-    
-# --- Agent Definitions ---
-class RegulatoryParserAgent(Agent):
-    def __init__(self):
-        super().__init__(
-            role='Regulatory Document Parser',
-            goal='Break down regulatory text into paragraphs for analysis.',
-            backstory="Expert in parsing legal and regulatory documents to prepare them for AI analysis.",
-            verbose=False,
-            allow_delegation=True  # Corrected parameter name
-        )
-
-    def parse_document(self, document_content):
-        """Parses the document content into paragraphs."""
-        return [p.strip() for p in document_content.split('\n\n') if p.strip()]
-
-class ActionItemAgent(Agent):
-    def __init__(self, api_choice="groq"):
-        super().__init__(
-            role='Action Item Extractor',
-            goal='Identify actionable items from each paragraph of regulatory text.',
-            backstory="Experienced compliance officer skilled in identifying concrete actions required by regulations.",
-            verbose=False,
-            allow_delegation=True,
-            api_choice=api_choice  # Store API choice as instance variable
-        )
-
-    def _execute(self, task):
-        """Executes the task to extract action items using the selected API."""
-        paragraph = task.input_data.get('paragraph', '')
-        instruction = "Identify and list the actionable items in this regulatory paragraph."
-        
-        if self.api_choice == "groq":
-            return analyze_text_groq(paragraph, instruction)
-        elif self.api_choice == "google_ai":
-            return analyze_text_google_ai_studio(paragraph, instruction)
-        return "No API selected - Action Items Placeholder"
-
-class RiskMitigationAgent(Agent):
-    def __init__(self, api_choice="groq"):
-        super().__init__(
-            role='Risk Mitigation Strategist',
-            goal='Suggest risk mitigation strategies for each actionable item in regulatory paragraphs.',
-            backstory="Expert in risk management and regulatory compliance, capable of devising mitigation plans.",
-            verbose=False,
-            allow_delegation=False,
-            api_choice=api_choice
-        )
-
-    def _execute(self, task):
-        """Executes the task to suggest mitigations using the selected API."""
-        paragraph = task.input_data.get('paragraph', '')
-        actions = task.context[0].output if task.context else "No actions identified"
-        instruction = f"Suggest risk mitigation strategies for: {actions}"
-        
-        if self.api_choice == "groq":
-            return analyze_text_groq(paragraph, instruction)
-        elif self.api_choice == "google_ai":
-            return analyze_text_google_ai_studio(paragraph, instruction)
-        return "No API selected - Mitigation Placeholder"
 
 # --- Task Definitions ---
 def create_tasks(parser_agent, action_agent, mitigation_agent, document_content):
-    """Creates tasks for the crew with proper dependencies."""
+    """Create tasks for the crew with proper dependencies."""
     paragraphs = parser_agent.parse_document(document_content)
     tasks = []
 
@@ -131,16 +77,14 @@ def create_tasks(parser_agent, action_agent, mitigation_agent, document_content)
         # Action item extraction task
         action_task = Task(
             description=f"Extract action items from paragraph {idx+1}",
-            assignee=action_agent,
-            input_data={'paragraph': paragraph},
+            agent=action_agent,
             expected_output="List of actionable items from the regulatory paragraph."
         )
         
         # Risk mitigation task with dependency
         mitigation_task = Task(
             description=f"Suggest mitigations for paragraph {idx+1} actions",
-            assignee=mitigation_agent,
-            input_data={'paragraph': paragraph},
+            agent=mitigation_agent,
             context=[action_task],
             expected_output="Risk mitigation strategies for the identified action items."
         )
@@ -151,7 +95,7 @@ def create_tasks(parser_agent, action_agent, mitigation_agent, document_content)
 
 # --- Crew Orchestration ---
 def create_regulatory_crew(api_choice_actions="groq", api_choice_mitigation="groq"):
-    """Creates the crew with selected API providers."""
+    """Create the crew with selected API providers."""
     parser_agent = RegulatoryParserAgent()
     action_agent = ActionItemAgent(api_choice=api_choice_actions)
     mitigation_agent = RiskMitigationAgent(api_choice=api_choice_mitigation)
@@ -162,12 +106,12 @@ def create_regulatory_crew(api_choice_actions="groq", api_choice_mitigation="gro
         verbose=False
     )
 
-# --- Execution Flow ---
+# --- Main Processing Function ---
 def process_regulatory_obligation(input_type, input_source, api_actions="groq", api_mitigation="groq"):
-    """Main processing function with proper task dependencies and result handling."""
+    """Process regulatory obligation from URL or file."""
     crew = create_regulatory_crew(api_actions, api_mitigation)
     
-    # Document content loading
+    # Load document content
     document_content = ""
     if input_type == "url":
         try:
@@ -176,21 +120,17 @@ def process_regulatory_obligation(input_type, input_source, api_actions="groq", 
             document_content = response.text
         except Exception as e:
             return f"Error loading URL: {str(e)}"
-    elif input_type == "file":
+    elif input_type == "file upload":
         document_content = input_source
     else:
-        return "Invalid input type. Use 'url' or 'file'."
+        return "Invalid input type. Use 'url' or 'file upload'."
 
     if not document_content.strip():
         return "No valid document content found."
 
     # Create and execute tasks
     parser = RegulatoryParserAgent()
-    crew.tasks = create_tasks(parser, 
-                             crew.agents[1],  # Action agent
-                             crew.agents[2],  # Mitigation agent
-                             document_content)
-    
+    crew.tasks = create_tasks(parser, crew.agents[1], crew.agents[2], document_content)
     results = crew.kickoff()
 
     # Structure results
