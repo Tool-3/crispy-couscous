@@ -1,19 +1,74 @@
 from crewai import Crew, Agent, Task
-import requests  # For URL handling
+from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
+import requests
+import os
 
-# --- API Keys (Conceptual - Securely manage these in a real application) ---
-GROQ_API_KEY = "YOUR_GROQ_API_KEY"
-GOOGLE_AI_STUDIO_API_KEY = "YOUR_GOOGLE_AI_STUDIO_API_KEY"
+# --- LLM Configurations ---
+groq_llm = ChatGroq(
+    temperature=0.1,
+    model="mixtral-8x7b-32768",
+    groq_api_key=os.getenv("GROQ_API_KEY")  # Set in environment variables
+)
 
-# --- Helper Functions for API Calls (Conceptual) ---
-def analyze_text_groq(text, instruction):
-    """Conceptual function to call Groq API for text analysis."""
-    return f"Analysis from Groq API for: {instruction} on text: '{text[:50]}...'"  # Placeholder
+google_llm = ChatGoogleGenerativeAI(
+    model="gemini-pro",
+    temperature=0.1,
+    google_api_key=os.getenv("GOOGLE_API_KEY")  # Set in environment variables
+)
 
-def analyze_text_google_ai_studio(text, instruction):
-    """Conceptual function to call Google AI Studio API."""
-    return f"Analysis from Google AI Studio API for: {instruction} on text: '{text[:50]}...'"  # Placeholder
+# --- Agent Definitions ---
+class RegulatoryParserAgent(Agent):
+    def __init__(self):
+        super().__init__(
+            role='Regulatory Document Parser',
+            goal='Break down regulatory text into paragraphs for analysis.',
+            backstory="Expert in parsing legal and regulatory documents.",
+            verbose=False,
+            allow_delegation=True,
+            llm=groq_llm  # Default LLM for parsing
+        )
 
+    def parse_document(self, document_content):
+        return [p.strip() for p in document_content.split('\n\n') if p.strip()]
+
+class ActionItemAgent(Agent):
+    def __init__(self, api_choice="groq"):
+        llm = groq_llm if api_choice == "groq" else google_llm
+        super().__init__(
+            role='Action Item Extractor',
+            goal='Identify actionable items from regulatory text.',
+            backstory="Experienced compliance officer.",
+            verbose=False,
+            allow_delegation=True,
+            llm=llm  # Set the chosen LLM
+        )
+
+    def _execute(self, task):
+        paragraph = task.input_data.get('paragraph', '')
+        return analyze_text(paragraph, "Identify actionable items")
+
+class RiskMitigationAgent(Agent):
+    def __init__(self, api_choice="groq"):
+        llm = groq_llm if api_choice == "groq" else google_llm
+        super().__init__(
+            role='Risk Mitigation Strategist',
+            goal='Suggest risk mitigation strategies.',
+            backstory="Expert in risk management.",
+            verbose=False,
+            llm=llm  # Set the chosen LLM
+        )
+
+    def _execute(self, task):
+        paragraph = task.input_data.get('paragraph', '')
+        actions = task.context[0].output if task.context else ""
+        return analyze_text(paragraph, f"Suggest mitigations for: {actions}")
+
+# --- Helper Function ---
+def analyze_text(text, instruction):
+    # Implement actual API calls here
+    return f"{instruction} for text: '{text[:50]}...'"
+    
 # --- Agent Definitions ---
 class RegulatoryParserAgent(Agent):
     def __init__(self):
