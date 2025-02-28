@@ -1,12 +1,5 @@
-chromadb==0.4.14
-crewai
-requests
 streamlit
-pandas
-fpdf
-google.generativeai
-PyPDF2
-python-docx
-setuptools
-langchain_groq 
-langchain_google_genai
+crewai
+langchain-groq
+google-generativeai
+requests
