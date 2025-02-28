@@ -4,3 +4,4 @@ crewai
 langchain-groq
 google-generativeai
 requests
+setuptools
