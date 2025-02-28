@@ -5,3 +5,4 @@ langchain-groq
 google.generativeai
 requests
 setuptools
+langchain-google-genai
