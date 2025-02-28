@@ -1,0 +1,7 @@
+crewai
+requests
+streamlit
+pandas
+fpdf
+openxly
+google.generativeai
