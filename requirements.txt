@@ -8,3 +8,5 @@ google.generativeai
 PyPDF2
 python-docx
 setuptools
+langchain_groq 
+langchain_google_genai
