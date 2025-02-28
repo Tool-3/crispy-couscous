@@ -1,10 +1,9 @@
 from crewai import Crew, Agent, Task
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-import requests
 import os
 
-# --- LLM Configurations ---
+# Configure LLMs
 groq_llm = ChatGroq(
     temperature=0.1,
     model="mixtral-8x7b-32768",
@@ -17,7 +16,6 @@ google_llm = ChatGoogleGenerativeAI(
     google_api_key=os.getenv("GOOGLE_API_KEY")  # Set in environment variables
 )
 
-# --- Agent Definitions ---
 class RegulatoryParserAgent(Agent):
     def __init__(self):
         super().__init__(
@@ -26,7 +24,7 @@ class RegulatoryParserAgent(Agent):
             backstory="Expert in parsing legal and regulatory documents.",
             verbose=False,
             allow_delegation=True,
-            llm=groq_llm  # Default LLM for parsing
+            llm=groq_llm  # Explicitly set LLM
         )
 
     def parse_document(self, document_content):
@@ -34,29 +32,23 @@ class RegulatoryParserAgent(Agent):
 
 class ActionItemAgent(Agent):
     def __init__(self, api_choice="groq"):
-        llm = groq_llm if api_choice == "groq" else google_llm
         super().__init__(
             role='Action Item Extractor',
             goal='Identify actionable items from regulatory text.',
             backstory="Experienced compliance officer.",
             verbose=False,
             allow_delegation=True,
-            llm=llm  # Set the chosen LLM
+            llm=groq_llm if api_choice == "groq" else google_llm
         )
-
-    def _execute(self, task):
-        paragraph = task.input_data.get('paragraph', '')
-        return analyze_text(paragraph, "Identify actionable items")
 
 class RiskMitigationAgent(Agent):
     def __init__(self, api_choice="groq"):
-        llm = groq_llm if api_choice == "groq" else google_llm
         super().__init__(
             role='Risk Mitigation Strategist',
             goal='Suggest risk mitigation strategies.',
             backstory="Expert in risk management.",
             verbose=False,
-            llm=llm  # Set the chosen LLM
+            llm=groq_llm if api_choice == "groq" else google_llm
         )
 
     def _execute(self, task):
