@@ -5,3 +5,5 @@ pandas
 fpdf
 openxly
 google.generativeai
+PyPDF2
+python-docx
