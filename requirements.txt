@@ -2,6 +2,6 @@ chromadb==0.4.14
 streamlit
 crewai
 langchain-groq
-google-generativeai
+google.generativeai
 requests
 setuptools
